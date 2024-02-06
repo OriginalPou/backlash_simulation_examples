@@ -16,6 +16,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+def draw_sphere(ax, sphere_center, radius):
+    u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+    x = radius * np.cos(u) * np.sin(v) + sphere_center[0]
+    y = radius * np.sin(u) * np.sin(v) + sphere_center[1]
+    z = radius * np.cos(v) + sphere_center[2]
+    return ax.plot_wireframe(x, y, z, color="r")
+
+def geodesic_distance(R_cc : np.ndarray, R_sph_n : np.ndarray):
+    return(np.abs(np.arccos((np.trace(np.transpose(R_cc) @ R_sph_n)-1)/2)))
+    
+
 if __name__ == "__main__" :
     model = EndoscopeTwoBendingModel()
    
@@ -44,22 +55,19 @@ if __name__ == "__main__" :
     
     ## Fitting a sphere to the workspace
     radius, sphere_center = sphere_fit(p)
+    print(radius)
+    print(sphere_center)
     
-    def mean_error_sphere(points : np.ndarray, sphere_center, radius):
+    def translation_mean_error_sphere(points : np.ndarray, sphere_center : np.ndarray, radius):
         error = 0
         for i in range(points.shape[0]):
             error += np.abs(np.linalg.norm(points[i,:]-sphere_center) - radius)
         return(error/points.shape[0])
 
-    mean_error = mean_error_sphere(p, sphere_center, radius)
+    mean_error = translation_mean_error_sphere(p, sphere_center, radius)
     print(mean_error)
     # Draw sphere
-    def draw_sphere(ax, sphere_center, radius):
-        u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-        x = radius * np.cos(u) * np.sin(v) + sphere_center[0]
-        y = radius * np.sin(u) * np.sin(v) + sphere_center[1]
-        z = radius * np.cos(v) + sphere_center[2]
-        return ax.plot_wireframe(x, y, z, color="r")
+    
     
     draw_sphere(ax, sphere_center, radius)
     ax.set_title("Fitting a sphere to workspace with mean error of %.4f meters" % mean_error)
@@ -158,14 +166,14 @@ if __name__ == "__main__" :
                     wireframe_per_body['tip'][-1,2],
                     c='r', label="_"+label)
 
+    # plot the pose from the constant curvature model
     TR_44_Fc = np.eye(4)
     TR_44_Fc[:-1, -1] = p.reshape((-1,))
     TR_44_Fc[:-1, :-1] = R_p
     plot_robot(ax, np.array([q1, q2]))
     plot_frame(ax, TR_44 = TR_44_Fc, frame_name = '', arrows_length = 0.05)
 
-
-
+    # plot the pose normal to the sphere manifold 
     TR_44_Sphere = np.eye(4)
     TR_44_Sphere[:-1, -1] = proj_p.reshape((-1,))
     TR_44_Sphere[:-1, :-1] = R_proj_p
@@ -175,5 +183,14 @@ if __name__ == "__main__" :
     ax.plot([sphere_center[0], proj_p[0]], [sphere_center[1], proj_p[1]], [sphere_center[2], proj_p[2]], '--')
 
     ax.legend()
-    plt.show()
+    # plt.show()
 
+    # compute the rotation error using the Angular (geodesic) distance in SO(3)
+    
+    # r = R.from_matrix(np.transpose(R_p) @ R_proj_p)
+    # angle = np.linalg.norm(r.as_rotvec())
+    # axis = r.as_rotvec()/angle
+    # print(angle)
+    # print(axis)
+
+    print(geodesic_distance(R_p, R_proj_p))
