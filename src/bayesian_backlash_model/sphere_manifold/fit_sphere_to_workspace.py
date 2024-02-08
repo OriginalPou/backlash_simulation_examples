@@ -21,7 +21,7 @@ def draw_sphere(ax, sphere_center, radius):
     x = radius * np.cos(u) * np.sin(v) + sphere_center[0]
     y = radius * np.sin(u) * np.sin(v) + sphere_center[1]
     z = radius * np.cos(v) + sphere_center[2]
-    return ax.plot_wireframe(x, y, z, color="r")
+    return ax.plot_wireframe(x, y, z, color="y")
 
 def geodesic_distance(R_cc : np.ndarray, R_sph_n : np.ndarray):
     return(np.abs(np.arccos((np.trace(np.transpose(R_cc) @ R_sph_n)-1)/2)))
@@ -183,7 +183,7 @@ if __name__ == "__main__" :
     ax.plot([sphere_center[0], proj_p[0]], [sphere_center[1], proj_p[1]], [sphere_center[2], proj_p[2]], '--')
 
     ax.legend()
-    # plt.show()
+    plt.show()
 
     # compute the rotation error using the Angular (geodesic) distance in SO(3)
     
