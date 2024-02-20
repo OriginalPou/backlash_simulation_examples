@@ -105,6 +105,17 @@ class EndoscopeTwoBendingModel:
         sym_R_base_to_tip_derivative_wrt_beta_ = diff(self.sym_R_base_to_tip_, sym_beta)
         self.func_R_base_to_tip_derivative_wrt_beta_ = lambdify(self.sym_c_angles_, sym_R_base_to_tip_derivative_wrt_beta_, "numpy")
 
+        # Define the angular velocity jacobian wrt c_angle in the end effector frame
+        skew_symm_ang_vel_base_wrt_alpha = simplify( sym_R_base_to_tip_derivative_wrt_alpha_ @ self.sym_R_base_to_tip_.transpose())
+        skew_symm_ang_vel_base_wrt_beta = simplify( sym_R_base_to_tip_derivative_wrt_beta_ @ self.sym_R_base_to_tip_.transpose())
+        self.sym_jacobian_angular_vel_wrt_c_angle_base = Matrix([
+            [ skew_symm_ang_vel_base_wrt_alpha[2, 1], skew_symm_ang_vel_base_wrt_beta[2, 1] ],
+            [ skew_symm_ang_vel_base_wrt_alpha[0, 2], skew_symm_ang_vel_base_wrt_beta[0, 2] ],
+            [ skew_symm_ang_vel_base_wrt_alpha[1, 0], skew_symm_ang_vel_base_wrt_beta[1, 0] ]
+        ])
+        self.sym_jacobian_angular_vel_wrt_c_angle_ee = self.sym_R_base_to_tip_.transpose() @ self.sym_jacobian_angular_vel_wrt_c_angle_base
+        self.func_jacobian_angular_vel_wrt_c_angle_ee_ = lambdify(self.sym_c_angles_, self.sym_jacobian_angular_vel_wrt_c_angle_ee, "numpy")
+
         self.camera_model_params_ = None
         self.init_default_camera_model()
 
@@ -220,6 +231,13 @@ class EndoscopeTwoBendingModel:
         J_cable_to_angle = self.func_jacobian_c_cables_to_c_angles_(c_cables)
         c_angles = self.func_c_cables_to_c_angles_(c_cables)
         J_angle_to_position = self.func_jacobian_angular_vel_wrt_c_angle_ (c_angles)
+        return J_angle_to_position @ J_cable_to_angle
+    
+    def jacobian_angular_ee (self, c_cables_) :
+        c_cables = c_cables_.reshape((-1,1)).astype(float)
+        J_cable_to_angle = self.func_jacobian_c_cables_to_c_angles_(c_cables)
+        c_angles = self.func_c_cables_to_c_angles_(c_cables)
+        J_angle_to_position = self.func_jacobian_angular_vel_wrt_c_angle_ee_ (c_angles)
         return J_angle_to_position @ J_cable_to_angle
 
     def full_jacobian(self, c_cables_) :
@@ -356,7 +374,7 @@ class EndoscopeTwoBendingModel:
             ])
 
 
-#%%
+##%%
 if __name__ == "__main__" :
     import matplotlib.pyplot as plt
     model = EndoscopeTwoBendingModel()
@@ -405,7 +423,7 @@ if __name__ == "__main__" :
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.legend()
-#%%
+##%%
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     ax.scatter(0,0,0, 'r',label="base")
@@ -453,7 +471,7 @@ if __name__ == "__main__" :
     ax.set_zlabel('Z')
     ax.legend()
 
-    #%% try camera model
+    ##%% try camera model
     from plot_ref_frames import plot_frame, draw_world_frame
 
     def plot_pose_3D(c, p, ax = None, ax_img = None) :
@@ -496,7 +514,7 @@ if __name__ == "__main__" :
         return ax, ax_img
 
     model.init_default_camera_model()
-    #%%
+    ##%%
     q_pos_eq = np.pi/4 * model.D_ / np.sqrt(2)
 
     c = np.array([-q_pos_eq, q_pos_eq])
@@ -529,6 +547,7 @@ if __name__ == "__main__" :
     plot_pose_3D(np.array([-0.001, -0.001]), P, ax, ax_img)
     plot_pose_3D(np.array([-0.001, 0.0]), P, ax, ax_img)
     plot_pose_3D(np.array([-0.001, 0.001]), P, ax, ax_img)
+    plt.show()
 
 
 
