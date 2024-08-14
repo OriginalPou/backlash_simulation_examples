@@ -66,7 +66,7 @@ class EndoscopeMotionModel():
                             c_label= "c1", c_unit= "rad")
 
         self.BL_q2 = BacklashSinkhole(
-                            params= self.bl_q1_params, 
+                            params= self.bl_q2_params, 
                             q_label= "q2", q_unit= "rad",
                             c_label= "c2", c_unit= "rad")
         
@@ -137,6 +137,7 @@ class EndoscopeMotionModel():
         self.R = self.R @ self.R_dt(q1_k, q1_k_1, q2_k, q2_k_1)
 
 from particles import state_space_models as ssm
+from scipy.spatial.transform import Rotation as R
 
 from utils.uniform_axis_von_mises_spin_distribution import UARS_von_Mises
 
@@ -164,16 +165,16 @@ class EndoscopeMotionModel_SSM(ssm.StateSpaceModel):
     default_params = {'mq1' : 1, 'wq1' : 0.04, 'mq2': 1, 'wq2' : 0.3,           # Backlash model params for act 1 and 2
                         'Jwx_q1' : -0.24 , 'Jwy_q1' : 0.95, 'Jwz_q1': 0.11,     # Angular Jacobian for act 1
                         'Jwx_q2' : -0.78, 'Jwy_q2' : -0.01, 'Jwz_q2': 0.1,      # Angular Jacobian for act 2
-                        'kappa_x0' : 50, 'kappa_x' : 50, 'kappa_y' : 50}        # concentration for the UARS noise distribution in SO3
+                        'kappa_x0' : 100, 'kappa_x' : 1000, 'kappa_y' : 100}    # concentration for the UARS noise distribution in SO3
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         robot_params = np.array([self.mq1, self.wq1,                            # Backlash model params for act 1
-                                self.mq1, self.wq1,                             # Backlash model params for act 2
+                                self.mq2, self.wq2,                             # Backlash model params for act 2
                                 self.Jwx_q1, self.Jwy_q1, self.Jwz_q1,          # Angular Jacobian for act 1
                                 self.Jwx_q2, self.Jwy_q2, self.Jwz_q2])         # Angular Jacobian for act 2
         self.endoscope_motion_model = EndoscopeMotionModel(robot_params)
-
+    
     @classmethod
     def Set_Actuation(cls, q1, q2):
         '''
@@ -196,8 +197,8 @@ class EndoscopeMotionModel_SSM(ssm.StateSpaceModel):
     def q2(self):
         return type(self)._q2
 
-    def PX0(self): # Distribution of X_0
-        return UARS_von_Mises(kappa= self.kappa_x0)
+    def PX0(self, starting_point = np.eye(3)): # Distribution of X_0
+        return UARS_von_Mises(mode = starting_point, kappa= self.kappa_x0)
     
     def PX(self, t, xp): # Distribution of X_t given X_{t-1}=xp (p=past)
         try:
@@ -206,9 +207,34 @@ class EndoscopeMotionModel_SSM(ssm.StateSpaceModel):
             q2_k = self.q2[t]
             q2_k_1 = self.q2[t-1]
         except:
-            raise Exception("could not load the trajectory of actuatos, please set them up with Set_Actuation()")
+            raise Exception("could not load the trajectory of actuators, please set them up with Set_Actuation()")
         R_dt = self.endoscope_motion_model.R_dt(q1_k= q1_k, q1_k_1= q1_k_1, q2_k= q2_k, q2_k_1= q2_k_1)
-        return UARS_von_Mises(mode= xp @ R_dt, kappa= self.kappa_x)
+        return UARS_von_Mises(mode= R.from_rotvec(xp).as_matrix() @ R_dt, kappa= self.kappa_x)
     
     def PY(self, t, xp, x):  # Distribution of Y_t given X_t=x (and possibly X_{t-1}=xp)
         return UARS_von_Mises(mode= x, kappa= self.kappa_y)
+
+    def proposal0(self, data, t = None):
+        if t is None : 
+            return(self.PX0())
+        else :
+            # allows us to start the pf at a specific timestep
+            return(self.PX0(starting_point=data[t]))
+            
+
+    def proposal(self, t, xp, data):
+        try:
+            q1_k = self.q1[t]
+            q1_k_1 = self.q1[t-1]
+            q2_k = self.q2[t]
+            q2_k_1 = self.q2[t-1]
+        except:
+            raise Exception("could not load the trajectory of actuators, please set them up with Set_Actuation()")
+        R_dt = self.endoscope_motion_model.R_dt(q1_k= q1_k, q1_k_1= q1_k_1, q2_k= q2_k, q2_k_1= q2_k_1)
+
+        # to guide the particles, we reduce the error between each particle and the previous data point y[t-1]
+        # and then move them forward using the endoscope motion model
+        dR_y_x = np.transpose(R.from_rotvec(xp).as_matrix(), (0,2,1)) @ data[t-1]
+        dR_y_x_halfway = R.from_matrix(dR_y_x).as_rotvec()/2
+        
+        return UARS_von_Mises(mode= R.from_rotvec(xp).as_matrix() @ R.from_rotvec(dR_y_x_halfway).as_matrix() @ R_dt, kappa= self.kappa_x)
